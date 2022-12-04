@@ -11,12 +11,12 @@
 CFLAGS+=-std=c99 -Wall -Wpedantic -fopenmp
 LDLIBS=-lm
 
-all: sph
+all: omp-sph
 
-sph: sph.c
+omp-sph: omp-sph.c
 	$(CC) $(CFLAGS) $< $(LDLIBS) -o $@
 
 .PHONY: clean
 
 clean:
-	\rm -f sph *.o *~
+	\rm -f omp-sph *.o *~

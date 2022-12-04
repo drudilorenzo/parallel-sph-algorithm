@@ -28,6 +28,15 @@
  * SOFTWARE.
  *
  ****************************************************************************/
+
+/*
+    Compile with:
+    gcc -std=c99 -Wall -Wpedantic -fopenmp omp-sph.c -o omp-sph -lm
+
+    Run with:
+    OMP_NUM_THREADS=4 ./omp-sph
+*/
+
 #ifdef GUI
 #if __APPLE__
 #include <GLUT/glut.h>
@@ -37,10 +46,12 @@
 #endif
 
 #include "hpc.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

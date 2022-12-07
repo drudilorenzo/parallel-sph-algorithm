@@ -54,5 +54,6 @@ dkms.conf
 *.gui
 sph
 *-sph
+results.txt
 
 

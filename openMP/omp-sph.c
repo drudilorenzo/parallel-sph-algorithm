@@ -37,21 +37,12 @@
     OMP_NUM_THREADS=4 ./omp-sph
 */
 
-#ifdef GUI
-#if __APPLE__
-#include <GLUT/glut.h>
-#else
-#include <GL/glut.h>
-#endif
-#endif
-
 #include "hpc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
-
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -60,34 +51,22 @@
 /* "Particle-Based Fluid Simulation for Interactive Applications" by
    Müller et al. solver parameters */
 
-const float Gx = 0.0, Gy = -10.0;   // external (gravitational) forces
-const float REST_DENS = 300;    // rest density
-const float GAS_CONST = 2000;   // const for equation of state
-const float H = 16;             // kernel radius
-const float EPS = 16;           // equal to H
-const float MASS = 2.5;         // assume all particles have the same mass
-const float VISC = 200;         // viscosity constant
-const float DT = 0.0007;        // integration timestep
+const float Gx = 0.0, Gy = -10.0; // external (gravitational) forces
+const float REST_DENS = 300;      // rest density
+const float GAS_CONST = 2000;     // const for equation of state
+const float H = 16;               // kernel radius
+const float EPS = 16;             // equal to H
+const float MASS = 2.5;           // assume all particles have the same mass
+const float VISC = 200;           // viscosity constant
+const float DT = 0.0007;          // integration timestep
 const float BOUND_DAMPING = -0.5;
-
-// rendering projection parameters
-// (the following ought to be "const float", but then the compiler
-// would give an error because VIEW_WIDTH and VIEW_HEIGHT are
-// initialized with non-literal expressions)
-#ifdef GUI
-
-const int MAX_PARTICLES = 5000;
-#define WINDOW_WIDTH 1024
-#define WINDOW_HEIGHT 768
-
-#else
 
 const int MAX_PARTICLES = 20000;
 // Larger window size to accommodate more particles
 #define WINDOW_WIDTH 3000
 #define WINDOW_HEIGHT 2000
 
-#endif
+#define OMP_NUM_THREADS 6
 
 const int DAM_PARTICLES = 500;
 
@@ -99,29 +78,30 @@ const float VIEW_HEIGHT = 1.5 * WINDOW_HEIGHT;
 
    You may choose a different layout of the particles[] data structure
    to suit your needs. */
-typedef struct {
-    float x, y;         // position
-    float vx, vy;       // velocity
-    float fx, fy;       // force
-    float rho, p;       // density, pressure
+typedef struct
+{
+    float x, y;   // position
+    float vx, vy; // velocity
+    float fx, fy; // force
+    float rho, p; // density, pressure
 } particle_t;
 
 particle_t *particles;
-int n_particles = 0;    // number of currently active particles
+int n_particles = 0; // number of currently active particles
 
 /**
  * Return a random value in [a, b]
  */
 float randab(float a, float b)
 {
-    return a + (b-a)*rand() / (float)(RAND_MAX);
+    return a + (b - a) * rand() / (float)(RAND_MAX);
 }
 
 /**
  * Set initial position of particle `*p` to (x, y); initialize all
  * other attributes to default values (zeros).
  */
-void init_particle( particle_t *p, float x, float y )
+void init_particle(particle_t *p, float x, float y)
 {
     p->x = x;
     p->y = y;
@@ -134,7 +114,7 @@ void init_particle( particle_t *p, float x, float y )
 /**
  * Return nonzero iff (x, y) is within the frame
  */
-int is_in_domain( float x, float y )
+int is_in_domain(float x, float y)
 {
     return ((x < VIEW_WIDTH - EPS) &&
             (x > EPS) &&
@@ -154,18 +134,23 @@ int is_in_domain( float x, float y )
  *
  * For CUDA: the CPU must initialize the domain.
  */
-void init_sph( int n )
+void init_sph(int n)
 {
     n_particles = 0;
     printf("Initializing with %d particles\n", n);
 
-    for (float y = EPS; y < VIEW_HEIGHT - EPS; y += H) {
-        for (float x = EPS; x <= VIEW_WIDTH * 0.8f; x += H) {
-            if (n_particles < n) {
+    for (float y = EPS; y < VIEW_HEIGHT - EPS; y += H)
+    {
+        for (float x = EPS; x <= VIEW_WIDTH * 0.8f; x += H)
+        {
+            if (n_particles < n)
+            {
                 float jitter = rand() / (float)RAND_MAX;
-                init_particle(particles + n_particles, x+jitter, y);
+                init_particle(particles + n_particles, x + jitter, y);
                 n_particles++;
-            } else {
+            }
+            else
+            {
                 return;
             }
         }
@@ -177,39 +162,56 @@ void init_sph( int n )
  ** You may parallelize the following four functions
  **/
 
-void compute_density_pressure( void )
+void compute_density_pressure(void)
 {
-    const float HSQ = H * H;    // radius^2 for optimization
+    const float HSQ = H * H; // radius^2 for optimization
 
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
        et al. */
     const float POLY6 = 4.0 / (M_PI * pow(H, 8));
 
-    #if __GNUC__ < 9
-    #pragma omp parallel for default(none) shared(n_particles, particles) schedule(dynamic, 32)
-    #else
-    #pragma omp parallel for default(none) shared(n_particles, particles, HSQ, MASS, POLY6, GAS_CONST, REST_DENS) schedule(dynamic, 32)
-    #endif
-    for (int i=0; i<n_particles; i++) {
-        particle_t *pi = &particles[i];
-        pi->rho = 0.0;
-        for (int j=0; j<n_particles; j++) {
+    float *rho = (float *)calloc(n_particles, sizeof(*rho)); assert(rho != NULL);
+
+#if __GNUC__ < 9
+#pragma omp parallel default(none) shared(n_particles, particles, rho)
+#else
+#pragma omp parallel default(none) shared(n_particles, particles, rho, HSQ, MASS, POLY6, GAS_CONST, REST_DENS)
+#endif
+{
+
+#pragma omp for reduction(+:rho[:n_particles]) collapse(2)
+    for (int i = 0; i < n_particles; i++)
+    {
+        for (int j = 0; j < n_particles; j++)
+        // for (int j = n_particles-1; j >= 0; j--)
+        {
+            const particle_t *pi = &particles[i];
             const particle_t *pj = &particles[j];
 
             const float dx = pj->x - pi->x;
             const float dy = pj->y - pi->y;
-            const float d2 = dx*dx + dy*dy;
+            const float d2 = dx * dx + dy * dy;
 
-            if (d2 < HSQ) {
-                pi->rho += MASS * POLY6 * pow(HSQ - d2, 3.0);
+            if (d2 < HSQ)
+            {
+                rho[i] += MASS * POLY6 * pow(HSQ - d2, 3.0);
             }
         }
+    }
+
+#pragma omp for
+    for (int i = 0; i < n_particles; i++) {
+        particle_t *pi = &particles[i];
+        pi->rho = rho[i];
         pi->p = GAS_CONST * (pi->rho - REST_DENS);
     }
 }
 
-void compute_forces( void )
+    free(rho);
+}
+
+void compute_forces(void)
 {
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
@@ -218,16 +220,28 @@ void compute_forces( void )
     const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
     const float EPS = 1e-6;
 
-    #if __GNUC__ < 9
-    #pragma omp parallel for default(none) shared(n_particles, particles) schedule(dynamic, 32)
-    #else
-    #pragma omp parallel for default(none) shared(n_particles, particles, MASS, SPIKY_GRAD, VISC_LAP, VISC, EPS, Gx, Gy, H) schedule(dynamic, 32)
-    #endif
-    for (int i=0; i<n_particles; i++) {
-        particle_t *pi = &particles[i];
-        float fpress_x = 0.0, fpress_y = 0.0;
-        float fvisc_x = 0.0, fvisc_y = 0.0;
-        for (int j=0; j<n_particles; j++) {
+    float *fpress_x = (float *)calloc(n_particles, sizeof(*fpress_x)); assert(fpress_x != NULL);
+    float *fpress_y = (float *)calloc(n_particles, sizeof(*fpress_y)); assert(fpress_y != NULL);
+    float *fvisc_x = (float *)calloc(n_particles, sizeof(*fvisc_x)); assert(fvisc_x != NULL);
+    float *fvisc_y = (float *)calloc(n_particles, sizeof(*fvisc_y)); assert(fvisc_y != NULL);
+
+#if __GNUC__ < 9
+#pragma omp parallel default(none) shared(n_particles, particles, fpress_x, fpress_y, fvisc_x, fvisc_y)
+#else
+#pragma omp parallel default(none) shared(n_particles, particles, fpress_x, fpress_y, fvisc_x, fvisc_y, MASS, SPIKY_GRAD, VISC_LAP, VISC, EPS, H, Gx, Gy)
+#endif 
+{
+
+#pragma omp for reduction(+:fpress_x[:n_particles], fpress_y[:n_particles], fvisc_x[:n_particles], fvisc_y[:n_particles]) collapse(2)
+    // #pragma omp parallel for default(none) shared(n_particles, particles, MASS, SPIKY_GRAD, VISC_LAP, VISC, EPS, H, Gx, Gy)
+    for (int i = 0; i < n_particles; i++)
+    {
+        // particle_t *pi = &particles[i];
+        // float fpress_x = 0.0, fpress_y = 0.0;
+        // float fvisc_x = 0.0, fvisc_y = 0.0;
+        for (int j = 0; j < n_particles; j++)
+        {
+            const particle_t *pi = &particles[i];
             const particle_t *pj = &particles[j];
 
             if (pi == pj)
@@ -237,32 +251,50 @@ void compute_forces( void )
             const float dy = pj->y - pi->y;
             const float dist = hypotf(dx, dy) + EPS; // avoids division by zero later on
 
-            if (dist < H) {
+            if (dist < H)
+            {
                 const float norm_dx = dx / dist;
                 const float norm_dy = dy / dist;
+
                 // compute pressure force contribution
-                fpress_x += -norm_dx * MASS * (pi->p + pj->p) / (2 * pj->rho) * SPIKY_GRAD * pow(H - dist, 3);
-                fpress_y += -norm_dy * MASS * (pi->p + pj->p) / (2 * pj->rho) * SPIKY_GRAD * pow(H - dist, 3);
+                fpress_x[i] += -norm_dx * MASS * (pi->p + pj->p) / (2 * pj->rho) * SPIKY_GRAD * pow(H - dist, 3);
+                fpress_y[i] += -norm_dy * MASS * (pi->p + pj->p) / (2 * pj->rho) * SPIKY_GRAD * pow(H - dist, 3);
                 // compute viscosity force contribution
-                fvisc_x += VISC * MASS * (pj->vx - pi->vx) / pj->rho * VISC_LAP * (H - dist);
-                fvisc_y += VISC * MASS * (pj->vy - pi->vy) / pj->rho * VISC_LAP * (H - dist);
+                fvisc_x[i] += VISC * MASS * (pj->vx - pi->vx) / pj->rho * VISC_LAP * (H - dist);
+                fvisc_y[i] += VISC * MASS * (pj->vy - pi->vy) / pj->rho * VISC_LAP * (H - dist);
             }
         }
+        // const float fgrav_x = Gx * MASS / pi->rho;
+        // const float fgrav_y = Gy * MASS / pi->rho;
+        // pi->fx = fpress_x + fvisc_x + fgrav_x;
+        // pi->fy = fpress_y + fvisc_y + fgrav_y;
+    }
+
+    #pragma omp for
+    for (int i = 0; i < n_particles; i++) {
+        particle_t *pi = &particles[i];
         const float fgrav_x = Gx * MASS / pi->rho;
         const float fgrav_y = Gy * MASS / pi->rho;
-        pi->fx = fpress_x + fvisc_x + fgrav_x;
-        pi->fy = fpress_y + fvisc_y + fgrav_y;
+        pi->fx = fpress_x[i] + fvisc_x[i] + fgrav_x;
+        pi->fy = fpress_y[i] + fvisc_y[i] + fgrav_y;
     }
 }
 
-void integrate( void )
+    free(fpress_x);
+    free(fpress_y);
+    free(fvisc_x);
+    free(fvisc_y);
+}
+
+void integrate(void)
 {
-    #if __GNUC__ < 9
-    #pragma omp parallel for default(none) shared(n_particles, particles) schedule(dynamic, 32)
-    #else
-    #pragma omp parallel for default(none) shared(n_particles, particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT) schedule(dynamic, 32)
-    #endif
-    for (int i=0; i<n_particles; i++) {
+#if __GNUC__ < 9
+#pragma omp parallel for default(none) shared(n_particles, particles)
+#else
+#pragma omp parallel for default(none) shared(n_particles, particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
+#endif
+    for (int i = 0; i < n_particles; i++)
+    {
         particle_t *p = &particles[i];
         // forward Euler integration
         p->vx += DT * p->fx / p->rho;
@@ -271,34 +303,39 @@ void integrate( void )
         p->y += DT * p->vy;
 
         // enforce boundary conditions
-        if (p->x - EPS < 0.0) {
+        if (p->x - EPS < 0.0)
+        {
             p->vx *= BOUND_DAMPING;
             p->x = EPS;
         }
-        if (p->x + EPS > VIEW_WIDTH) {
+        if (p->x + EPS > VIEW_WIDTH)
+        {
             p->vx *= BOUND_DAMPING;
             p->x = VIEW_WIDTH - EPS;
         }
-        if (p->y - EPS < 0.0) {
+        if (p->y - EPS < 0.0)
+        {
             p->vy *= BOUND_DAMPING;
             p->y = EPS;
         }
-        if (p->y + EPS > VIEW_HEIGHT) {
+        if (p->y + EPS > VIEW_HEIGHT)
+        {
             p->vy *= BOUND_DAMPING;
             p->y = VIEW_HEIGHT - EPS;
         }
     }
 }
 
-float avg_velocities( void )
+float avg_velocities(void)
 {
     double result = 0.0;
-    #if __GNUC__ < 9
-    #pragma omp parallel for default(none) shared(n_particles, particles) reduction(+:result)
-    #else
-    #pragma omp parallel for default(none) shared(n_particles, particles) reduction(+:result)
-    #endif
-    for (int i=0; i<n_particles; i++) {
+#if __GNUC__ < 9
+#pragma omp parallel for default(none) shared(n_particles, particles) reduction(+: result)
+#else
+#pragma omp parallel for default(none) shared(n_particles, particles) reduction(+: result)
+#endif
+    for (int i = 0; i < n_particles; i++)
+    {
         /* the hypot(x,y) function is equivalent to sqrt(x*x +
            y*y); */
         result += hypot(particles[i].vx, particles[i].vy) / n_particles;
@@ -306,150 +343,50 @@ float avg_velocities( void )
     return result;
 }
 
-void update( void )
+void update(void)
 {
     compute_density_pressure();
     compute_forces();
     integrate();
 }
 
-#ifdef GUI
-/**
- ** GUI-specific functions. You can enable the GUI by compiling this
- ** program with the -DGUI flag. Note, however, that the GUI version
- ** will NOT be evaluated, and therefore is not required to work with
- ** the parallel code. You are allowed to completely remove the block
- ** #ifdef GUI ... #endif from the source code.
- **/
-
-/**
- * Place a ball with radius `r` centered at (cx, cy) into the frame.
- */
-void place_ball( float cx, float cy, float r )
-{
-    for (float y = cy-r; y<cy+r; y += H) {
-        for (float x = cx-r; x<cx+r; x += H) {
-            if ((n_particles < MAX_PARTICLES) &&
-                is_in_domain(x, y) &&
-                ((x-cx)*(x-cx) + (y-cy)*(y-cy) <= r*r)) {
-                /* Add a small random jitter to the points, so that
-                   the result will be more realistic */
-                const float jitterx = rand() / (float)RAND_MAX;
-                const float jittery = rand() / (float)RAND_MAX;
-                init_particle(particles + n_particles, x+jitterx, y+jittery);
-                n_particles++;
-            }
-        }
-    }
-}
-
-void init_gl( void )
-{
-    glClearColor(0.9, 0.9, 0.9, 1);
-    glEnable(GL_POINT_SMOOTH);
-    glPointSize(H / 2.0);
-    glMatrixMode(GL_PROJECTION);
-}
-
-void render( void )
-{
-    static const int MAX_FRAMES = 100;
-    static int frameno = 0;
-
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glLoadIdentity();
-    glOrtho(0, VIEW_WIDTH, 0, VIEW_HEIGHT, 0, 1);
-
-    glColor4f(0.2, 0.6, 1.0, 1);
-    glBegin(GL_POINTS);
-    for (int i=0; i<n_particles; i++) {
-        glVertex2f(particles[i].x, particles[i].y);
-    }
-    glEnd();
-
-    glutSwapBuffers();
-    glutPostRedisplay();
-    frameno++;
-    if (frameno > MAX_FRAMES) {
-        const float avg = avg_velocities();
-        printf("avgV=%f\n", avg);
-        frameno = 0;
-    }
-}
-
-/**
- * The compiler might issue a warning due to parameters `x` and `y`
- * being unused; this warning can be ignored.
- */
-void keyboard_handler(unsigned char c, int x, int y)
-{
-    if (c=='r' || c=='R')  {
-        init_sph(DAM_PARTICLES);
-    }
-}
-
-void mouse_handler(int button, int state, int x, int y)
-{
-    static const float RADIUS = 110.0;
-    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        place_ball(1.5*x, VIEW_HEIGHT - 1.5*y, RADIUS);
-        printf("n. particles/max particles: %d/%d\n", n_particles, MAX_PARTICLES);
-    }
-}
-
-/**
- ** END of GUI-specific functions
- **/
-#endif
-
 int main(int argc, char **argv)
 {
     srand(1234);
 
-    particles = (particle_t*)malloc(MAX_PARTICLES * sizeof(*particles));
-    assert( particles != NULL );
-
-#ifdef GUI
-    glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInit(&argc, argv);
-    glutCreateWindow("Muller SPH");
-    glutDisplayFunc(render);
-    glutIdleFunc(update);
-    glutKeyboardFunc(keyboard_handler);
-    glutMouseFunc(mouse_handler);
-
-    init_gl();
-    init_sph(DAM_PARTICLES);
-
-    glutMainLoop();
-#else
     int n = DAM_PARTICLES;
     int nsteps = 50;
     float tstart, elapsed;
 
-    if (argc > 3) {
+    if (argc > 3)
+    {
         fprintf(stderr, "Usage: %s [nparticles [nsteps]]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    if (argc > 1) {
+    if (argc > 1)
+    {
         n = atoi(argv[1]);
     }
 
-    if (argc > 2) {
+    if (argc > 2)
+    {
         nsteps = atoi(argv[2]);
     }
 
-    if (n > MAX_PARTICLES) {
+    if (n > MAX_PARTICLES)
+    {
         fprintf(stderr, "FATAL: the maximum number of particles is %d\n", MAX_PARTICLES);
         return EXIT_FAILURE;
     }
 
+    particles = (particle_t *)malloc(n * sizeof(*particles));
+    assert(particles != NULL);
+
     init_sph(n);
     tstart = hpc_gettime();
-    for (int s=0; s<nsteps; s++) {
+    for (int s = 0; s < nsteps; s++)
+    {
         update();
         /* the average velocities MUST be computed at each step, even
            if it is not shown (to ensure constant workload per
@@ -460,7 +397,7 @@ int main(int argc, char **argv)
     }
     elapsed = hpc_gettime() - tstart;
     printf("Elapsed time %.2f\n", elapsed);
-#endif
+
     free(particles);
     return EXIT_SUCCESS;
 }

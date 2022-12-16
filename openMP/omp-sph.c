@@ -37,6 +37,7 @@
     OMP_NUM_THREADS=4 ./omp-sph
 */
 
+/* It must be the programme's first include. */
 #include "hpc.h"
 
 #include <stdio.h>
@@ -66,8 +67,6 @@ const int MAX_PARTICLES = 20000;
 #define WINDOW_WIDTH 3000
 #define WINDOW_HEIGHT 2000
 
-#define OMP_NUM_THREADS 6
-
 const int DAM_PARTICLES = 500;
 
 const float VIEW_WIDTH = 1.5 * WINDOW_WIDTH;
@@ -92,17 +91,15 @@ int n_particles = 0; // number of currently active particles
 /**
  * Return a random value in [a, b]
  */
-float randab(float a, float b)
-{
+float randab(float a, float b) {
     return a + (b - a) * rand() / (float)(RAND_MAX);
 }
 
 /**
- * Set initial position of particle `*p` to (x, y); initialize all
+ * Set initial position of par ticle `*p` to (x, y); initialize all
  * other attributes to default values (zeros).
  */
-void init_particle(particle_t *p, float x, float y)
-{
+void init_particle(particle_t *p, float x, float y) {
     p->x = x;
     p->y = y;
     p->vx = p->vy = 0.0;
@@ -114,8 +111,7 @@ void init_particle(particle_t *p, float x, float y)
 /**
  * Return nonzero iff (x, y) is within the frame
  */
-int is_in_domain(float x, float y)
-{
+int is_in_domain(float x, float y) {
     return ((x < VIEW_WIDTH - EPS) &&
             (x > EPS) &&
             (y < VIEW_HEIGHT - EPS) &&
@@ -134,8 +130,7 @@ int is_in_domain(float x, float y)
  *
  * For CUDA: the CPU must initialize the domain.
  */
-void init_sph(int n)
-{
+void init_sph(int n) {
     n_particles = 0;
     printf("Initializing with %d particles\n", n);
 
@@ -162,8 +157,7 @@ void init_sph(int n)
  ** You may parallelize the following four functions
  **/
 
-void compute_density_pressure(void)
-{
+void compute_density_pressure(void) {
     const float HSQ = H * H; // radius^2 for optimization
 
     /* Smoothing kernels defined in Muller and their gradients adapted
@@ -173,14 +167,14 @@ void compute_density_pressure(void)
 
     float *rho = (float *)calloc(n_particles, sizeof(*rho)); assert(rho != NULL);
 
-#if __GNUC__ < 9
-#pragma omp parallel default(none) shared(n_particles, particles, rho)
-#else
-#pragma omp parallel default(none) shared(n_particles, particles, rho, HSQ, MASS, POLY6, GAS_CONST, REST_DENS)
-#endif
-{
+    #if __GNUC__ < 9
+    #pragma omp parallel default(none) shared(n_particles, particles, rho)
+    #else
+    #pragma omp parallel default(none) shared(n_particles, particles, rho, HSQ, MASS, POLY6, GAS_CONST, REST_DENS)
+    #endif
+    {
 
-#pragma omp for reduction(+:rho[:n_particles]) collapse(2)
+    #pragma omp for reduction(+:rho[:n_particles]) collapse(2)
     for (int i = 0; i < n_particles; i++)
     {
         for (int j = 0; j < n_particles; j++)
@@ -200,7 +194,7 @@ void compute_density_pressure(void)
         }
     }
 
-#pragma omp for
+    #pragma omp for
     for (int i = 0; i < n_particles; i++) {
         particle_t *pi = &particles[i];
         pi->rho = rho[i];
@@ -211,8 +205,7 @@ void compute_density_pressure(void)
     free(rho);
 }
 
-void compute_forces(void)
-{
+void compute_forces(void) {
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
        et al. */
@@ -225,14 +218,14 @@ void compute_forces(void)
     float *fvisc_x = (float *)calloc(n_particles, sizeof(*fvisc_x)); assert(fvisc_x != NULL);
     float *fvisc_y = (float *)calloc(n_particles, sizeof(*fvisc_y)); assert(fvisc_y != NULL);
 
-#if __GNUC__ < 9
-#pragma omp parallel default(none) shared(n_particles, particles, fpress_x, fpress_y, fvisc_x, fvisc_y)
-#else
-#pragma omp parallel default(none) shared(n_particles, particles, fpress_x, fpress_y, fvisc_x, fvisc_y, MASS, SPIKY_GRAD, VISC_LAP, VISC, EPS, H, Gx, Gy)
-#endif 
-{
+    #if __GNUC__ < 9
+    #pragma omp parallel default(none) shared(n_particles, particles, fpress_x, fpress_y, fvisc_x, fvisc_y)
+    #else
+    #pragma omp parallel default(none) shared(n_particles, particles, fpress_x, fpress_y, fvisc_x, fvisc_y, MASS, SPIKY_GRAD, VISC_LAP, VISC, EPS, H, Gx, Gy)
+    #endif 
+    {
 
-#pragma omp for reduction(+:fpress_x[:n_particles], fpress_y[:n_particles], fvisc_x[:n_particles], fvisc_y[:n_particles]) collapse(2)
+    #pragma omp for reduction(+:fpress_x[:n_particles], fpress_y[:n_particles], fvisc_x[:n_particles], fvisc_y[:n_particles]) collapse(2)
     // #pragma omp parallel for default(none) shared(n_particles, particles, MASS, SPIKY_GRAD, VISC_LAP, VISC, EPS, H, Gx, Gy)
     for (int i = 0; i < n_particles; i++)
     {
@@ -278,7 +271,7 @@ void compute_forces(void)
         pi->fx = fpress_x[i] + fvisc_x[i] + fgrav_x;
         pi->fy = fpress_y[i] + fvisc_y[i] + fgrav_y;
     }
-}
+    }
 
     free(fpress_x);
     free(fpress_y);
@@ -286,13 +279,13 @@ void compute_forces(void)
     free(fvisc_y);
 }
 
-void integrate(void)
-{
-#if __GNUC__ < 9
-#pragma omp parallel for default(none) shared(n_particles, particles)
-#else
-#pragma omp parallel for default(none) shared(n_particles, particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
-#endif
+void integrate(void) {
+
+    #if __GNUC__ < 9
+    #pragma omp parallel for default(none) shared(n_particles, particles)
+    #else
+    #pragma omp parallel for default(none) shared(n_particles, particles, DT, EPS, BOUND_DAMPING, VIEW_WIDTH, VIEW_HEIGHT)
+    #endif
     for (int i = 0; i < n_particles; i++)
     {
         particle_t *p = &particles[i];
@@ -326,14 +319,14 @@ void integrate(void)
     }
 }
 
-float avg_velocities(void)
-{
+float avg_velocities(void) {
     double result = 0.0;
-#if __GNUC__ < 9
-#pragma omp parallel for default(none) shared(n_particles, particles) reduction(+: result)
-#else
-#pragma omp parallel for default(none) shared(n_particles, particles) reduction(+: result)
-#endif
+
+    #if __GNUC__ < 9
+    #pragma omp parallel for default(none) shared(n_particles, particles) reduction(+: result)
+    #else
+    #pragma omp parallel for default(none) shared(n_particles, particles) reduction(+: result)
+    #endif
     for (int i = 0; i < n_particles; i++)
     {
         /* the hypot(x,y) function is equivalent to sqrt(x*x +
@@ -343,15 +336,13 @@ float avg_velocities(void)
     return result;
 }
 
-void update(void)
-{
+void update(void) {
     compute_density_pressure();
     compute_forces();
     integrate();
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     srand(1234);
 
     int n = DAM_PARTICLES;
@@ -385,6 +376,7 @@ int main(int argc, char **argv)
 
     init_sph(n);
     tstart = hpc_gettime();
+
     for (int s = 0; s < nsteps; s++)
     {
         update();
@@ -395,6 +387,7 @@ int main(int argc, char **argv)
         if (s % 10 == 0)
             printf("step %5d, avgV=%f\n", s, avg);
     }
+
     elapsed = hpc_gettime() - tstart;
     printf("Elapsed time %.2f\n", elapsed);
 

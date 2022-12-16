@@ -37,21 +37,15 @@
     mpirun -n 4 ./mpi-sph
 */
 
-#ifdef GUI
-#if __APPLE__
-#include <GLUT/glut.h>
-#else
-#include <GL/glut.h>
-#endif
-#endif
-
+/* It must be the programme's first include. */
 #include "hpc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
-
+#include <stddef.h>
+#include <mpi.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -70,24 +64,10 @@ const float VISC = 200;         // viscosity constant
 const float DT = 0.0007;        // integration timestep
 const float BOUND_DAMPING = -0.5;
 
-// rendering projection parameters
-// (the following ought to be "const float", but then the compiler
-// would give an error because VIEW_WIDTH and VIEW_HEIGHT are
-// initialized with non-literal expressions)
-#ifdef GUI
-
-const int MAX_PARTICLES = 5000;
-#define WINDOW_WIDTH 1024
-#define WINDOW_HEIGHT 768
-
-#else
-
 const int MAX_PARTICLES = 20000;
 // Larger window size to accommodate more particles
 #define WINDOW_WIDTH 3000
 #define WINDOW_HEIGHT 2000
-
-#endif
 
 const int DAM_PARTICLES = 500;
 
@@ -106,14 +86,16 @@ typedef struct {
     float rho, p;       // density, pressure
 } particle_t;
 
-particle_t *particles;
+particle_t *particles, *local_particles;
 int n_particles = 0;    // number of currently active particles
+
+MPI_Datatype mpi_particles;
+int *counts, *displs, my_rank;
 
 /**
  * Return a random value in [a, b]
  */
-float randab(float a, float b)
-{
+float randab(float a, float b) {
     return a + (b-a)*rand() / (float)(RAND_MAX);
 }
 
@@ -121,8 +103,7 @@ float randab(float a, float b)
  * Set initial position of particle `*p` to (x, y); initialize all
  * other attributes to default values (zeros).
  */
-void init_particle( particle_t *p, float x, float y )
-{
+void init_particle(particle_t *p, float x, float y) {
     p->x = x;
     p->y = y;
     p->vx = p->vy = 0.0;
@@ -134,8 +115,7 @@ void init_particle( particle_t *p, float x, float y )
 /**
  * Return nonzero iff (x, y) is within the frame
  */
-int is_in_domain( float x, float y )
-{
+int is_in_domain(float x, float y) {
     return ((x < VIEW_WIDTH - EPS) &&
             (x > EPS) &&
             (y < VIEW_HEIGHT - EPS) &&
@@ -154,8 +134,7 @@ int is_in_domain( float x, float y )
  *
  * For CUDA: the CPU must initialize the domain.
  */
-void init_sph( int n )
-{
+void init_sph(int n) {
     n_particles = 0;
     printf("Initializing with %d particles\n", n);
 
@@ -173,21 +152,16 @@ void init_sph( int n )
     assert(n_particles == n);
 }
 
-/**
- ** You may parallelize the following four functions
- **/
-
-void compute_density_pressure( void )
-{
+void compute_density_pressure(void) {
     const float HSQ = H * H;    // radius^2 for optimization
 
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
        et al. */
     const float POLY6 = 4.0 / (M_PI * pow(H, 8));
-
-    for (int i=0; i<n_particles; i++) {
-        particle_t *pi = &particles[i];
+    const int local_n = counts[my_rank];
+    for (int i=0; i<local_n; i++) {
+        particle_t *pi = &local_particles[i];
         pi->rho = 0.0;
         for (int j=0; j<n_particles; j++) {
             const particle_t *pj = &particles[j];
@@ -204,17 +178,17 @@ void compute_density_pressure( void )
     }
 }
 
-void compute_forces( void )
-{
+void compute_forces(void) {
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
        et al. */
     const float SPIKY_GRAD = -10.0 / (M_PI * pow(H, 5));
     const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
     const float EPS = 1e-6;
+    const int local_n = counts[my_rank];
 
-    for (int i=0; i<n_particles; i++) {
-        particle_t *pi = &particles[i];
+    for (int i=0; i<local_n; i++) {
+        particle_t *pi = &local_particles[i];
         float fpress_x = 0.0, fpress_y = 0.0;
         float fvisc_x = 0.0, fvisc_y = 0.0;
 
@@ -246,10 +220,10 @@ void compute_forces( void )
     }
 }
 
-void integrate( void )
-{
-    for (int i=0; i<n_particles; i++) {
-        particle_t *p = &particles[i];
+void integrate(void) {
+    const int local_n = counts[my_rank];
+    for (int i=0; i<local_n; i++) {
+        particle_t *p = &local_particles[i];
         // forward Euler integration
         p->vx += DT * p->fx / p->rho;
         p->vy += DT * p->fy / p->rho;
@@ -276,139 +250,68 @@ void integrate( void )
     }
 }
 
-float avg_velocities( void )
-{
-    double result = 0.0;
-    for (int i=0; i<n_particles; i++) {
-        /* the hypot(x,y) function is equivalent to sqrt(x*x +
-           y*y); */
-        result += hypot(particles[i].vx, particles[i].vy) / n_particles;
+float avg_velocities() {
+    double local_result = 0.0;
+    const int local_n = counts[my_rank];
+
+    for (int i=0; i<local_n; i++) {
+        local_result += hypot(local_particles[i].vx, local_particles[i].vy) / n_particles;
     }
-    return result;
+
+    return local_result;
 }
 
-void update( void )
-{
+void update(void) {
     compute_density_pressure();
+
+    MPI_Allgatherv(
+        local_particles,
+        counts[my_rank],
+        mpi_particles,
+        particles,
+        counts,
+        displs,
+        mpi_particles,
+        MPI_COMM_WORLD
+    );
+
     compute_forces();
+
+    MPI_Allgatherv(
+        local_particles,
+        counts[my_rank],
+        mpi_particles,
+        particles,
+        counts,
+        displs,
+        mpi_particles,
+        MPI_COMM_WORLD
+    );
+
     integrate();
+
+    MPI_Allgatherv(
+        local_particles,
+        counts[my_rank],
+        mpi_particles,
+        particles,
+        counts,
+        displs,
+        mpi_particles,
+        MPI_COMM_WORLD
+    );
 }
 
-#ifdef GUI
-/**
- ** GUI-specific functions. You can enable the GUI by compiling this
- ** program with the -DGUI flag. Note, however, that the GUI version
- ** will NOT be evaluated, and therefore is not required to work with
- ** the parallel code. You are allowed to completely remove the block
- ** #ifdef GUI ... #endif from the source code.
- **/
-
-/**
- * Place a ball with radius `r` centered at (cx, cy) into the frame.
- */
-void place_ball( float cx, float cy, float r )
-{
-    for (float y = cy-r; y<cy+r; y += H) {
-        for (float x = cx-r; x<cx+r; x += H) {
-            if ((n_particles < MAX_PARTICLES) &&
-                is_in_domain(x, y) &&
-                ((x-cx)*(x-cx) + (y-cy)*(y-cy) <= r*r)) {
-                /* Add a small random jitter to the points, so that
-                   the result will be more realistic */
-                const float jitterx = rand() / (float)RAND_MAX;
-                const float jittery = rand() / (float)RAND_MAX;
-                init_particle(particles + n_particles, x+jitterx, y+jittery);
-                n_particles++;
-            }
-        }
-    }
-}
-
-void init_gl( void )
-{
-    glClearColor(0.9, 0.9, 0.9, 1);
-    glEnable(GL_POINT_SMOOTH);
-    glPointSize(H / 2.0);
-    glMatrixMode(GL_PROJECTION);
-}
-
-void render( void )
-{
-    static const int MAX_FRAMES = 100;
-    static int frameno = 0;
-
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glLoadIdentity();
-    glOrtho(0, VIEW_WIDTH, 0, VIEW_HEIGHT, 0, 1);
-
-    glColor4f(0.2, 0.6, 1.0, 1);
-    glBegin(GL_POINTS);
-    for (int i=0; i<n_particles; i++) {
-        glVertex2f(particles[i].x, particles[i].y);
-    }
-    glEnd();
-
-    glutSwapBuffers();
-    glutPostRedisplay();
-    frameno++;
-    if (frameno > MAX_FRAMES) {
-        const float avg = avg_velocities();
-        printf("avgV=%f\n", avg);
-        frameno = 0;
-    }
-}
-
-/**
- * The compiler might issue a warning due to parameters `x` and `y`
- * being unused; this warning can be ignored.
- */
-void keyboard_handler(unsigned char c, int x, int y)
-{
-    if (c=='r' || c=='R')  {
-        init_sph(DAM_PARTICLES);
-    }
-}
-
-void mouse_handler(int button, int state, int x, int y)
-{
-    static const float RADIUS = 110.0;
-    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        place_ball(1.5*x, VIEW_HEIGHT - 1.5*y, RADIUS);
-        printf("n. particles/max particles: %d/%d\n", n_particles, MAX_PARTICLES);
-    }
-}
-
-/**
- ** END of GUI-specific functions
- **/
-#endif
-
-int main(int argc, char **argv)
-{
-    srand(1234);
-
-    particles = (particle_t*)malloc(MAX_PARTICLES * sizeof(*particles));
-    assert( particles != NULL );
-
-#ifdef GUI
-    glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInit(&argc, argv);
-    glutCreateWindow("Muller SPH");
-    glutDisplayFunc(render);
-    glutIdleFunc(update);
-    glutKeyboardFunc(keyboard_handler);
-    glutMouseFunc(mouse_handler);
-
-    init_gl();
-    init_sph(DAM_PARTICLES);
-
-    glutMainLoop();
-#else
+int main(int argc, char **argv) {
     int n = DAM_PARTICLES;
     int nsteps = 50;
-    float tstart, elapsed;
+    int comm_sz;
+
+    srand(1234);
+ 
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
     if (argc > 3) {
         fprintf(stderr, "Usage: %s [nparticles [nsteps]]\n", argv[0]);
@@ -428,20 +331,102 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    init_sph(n);
-    tstart = hpc_gettime();
+    particles = (particle_t*)malloc(n * sizeof(*particles));
+    assert( particles != NULL );
+    if (0 == my_rank) {
+        init_sph(n);
+    }
+
+    counts = (int*)malloc(comm_sz * sizeof(*counts)); assert(counts != NULL);
+    displs = (int*)malloc(comm_sz * sizeof(*displs)); assert(displs != NULL);
+    for (int i=0; i<comm_sz; i++) {
+        const int istart = n * i / comm_sz;
+        const int iend = n * (i+1) / comm_sz;
+        counts[i] = iend - istart;
+        displs[i] = istart;
+    }
+
+    const int local_n = counts[my_rank];
+    local_particles = (particle_t*)malloc(local_n * sizeof(*local_particles)); 
+    assert(local_particles != NULL);
+
+    const int count = 4;
+    int displacements[] = {0, 2, 4, 6};
+    const int blocklenghts[] = {2, 2, 2, 2};
+
+    MPI_Type_indexed(
+        count, 
+        blocklenghts, 
+        displacements,
+        MPI_FLOAT,
+        &mpi_particles
+    );
+
+    MPI_Type_commit(&mpi_particles);
+
+    MPI_Bcast(
+        particles,
+        n,
+        mpi_particles,
+        0,
+        MPI_COMM_WORLD
+    ); 
+
+    MPI_Bcast(
+        &n_particles,
+        1,
+        MPI_INT,
+        0,
+        MPI_COMM_WORLD
+    );
+
+    const float tstart = hpc_gettime();
     for (int s=0; s<nsteps; s++) {
+    
+        MPI_Scatterv(
+            particles,
+            counts,
+            displs,
+            mpi_particles,
+            local_particles,
+            counts[my_rank],
+            mpi_particles,
+            0,
+            MPI_COMM_WORLD
+        );
+
         update();
-        /* the average velocities MUST be computed at each step, even
+        /* the average  velocities MUST be computed at each step, even
            if it is not shown (to ensure constant workload per
            iteration) */
-        const float avg = avg_velocities();
-        if (s % 10 == 0)
-            printf("step %5d, avgV=%f\n", s, avg);
+        const float local_avg = avg_velocities(local_particles);
+        float avg = 0;
+
+        MPI_Reduce(
+            &local_avg,
+            &avg,
+            comm_sz,
+            MPI_FLOAT,
+            MPI_SUM,
+            0,
+            MPI_COMM_WORLD
+        );
+
+        if (0 == my_rank) {
+            if (s % 10 == 0)
+                printf("step %5d, avgV=%f\n", s, avg);
+        }
     }
-    elapsed = hpc_gettime() - tstart;
+
+    const float elapsed = hpc_gettime() - tstart;
     printf("Elapsed time %.2f\n", elapsed);
-#endif
     free(particles);
+    free(local_particles);
+    free(counts);
+    free(displs);
+
+    MPI_Type_free(&mpi_particles);
+
+    MPI_Finalize();
     return EXIT_SUCCESS;
 }

@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
 
     particles = (particle_t*)malloc(n * sizeof(*particles));
     assert( particles != NULL );
-    if (0 == my_rank) {
+    if (my_rank == 0) {
         init_sph(n);
     }
 
@@ -445,13 +445,15 @@ int main(int argc, char **argv) {
             MPI_COMM_WORLD
         );
 
-        if (0 == my_rank) {
+        if (my_rank == 0) {
             if (s % 10 == 0)
                 printf("step %5d, avgV=%f\n", s, avg);
         }
     }
     const float elapsed = hpc_gettime() - tstart;
-    printf("Elapsed time %.2f\n", elapsed);
+    if (my_rank == 0) {        
+        printf("Elapsed time %.2f\n", elapsed);
+    }
 
     free(particles);
     free(local_particles);

@@ -65,6 +65,7 @@ const float DT = 0.0007;        // integration timestep
 const float BOUND_DAMPING = -0.5;
 
 const int MAX_PARTICLES = 20000;
+
 // Larger window size to accommodate more particles
 #define WINDOW_WIDTH 3000
 #define WINDOW_HEIGHT 2000
@@ -86,11 +87,37 @@ typedef struct {
     float rho, p;       // density, pressure
 } particle_t;
 
-particle_t *particles, *local_particles;
+
+/* Main particles array.
+
+   It's managed by the master process (rank == 0).
+   Each process send the updated cells to thius array.
+*/
+particle_t *particles; // Main particles array
+
+/* Process's particles array.
+
+   Each process do the computation on its own part of the data and then
+   send the updated particles to the main array.
+*/
+particle_t *local_particles; 
 int n_particles = 0;    // number of currently active particles
 
-MPI_Datatype mpi_particles;
-int *counts, *displs, my_rank;
+MPI_Datatype mpi_particles; // MPI data type to send/receive data of type  particle_t
+
+/* Counts array.
+
+   Entry i specifies the number of particles computed by process i.
+*/
+int *counts;
+
+/* Displacemenets array.
+
+   Entry i specifies the displacement of process i data from the starting 
+   of the array.  */
+int *displs; 
+
+int my_rank; // Rank of the process
 
 /**
  * Return a random value in [a, b]
@@ -129,10 +156,6 @@ int is_in_domain(float x, float y) {
  *
  * DO NOT parallelize this function, since it calls rand() which is
  * not thread-safe.
- *
- * For MPI and OpenMP: only the master must initialize the domain;
- *
- * For CUDA: the CPU must initialize the domain.
  */
 void init_sph(int n) {
     n_particles = 0;
@@ -340,25 +363,34 @@ int main(int argc, char **argv) {
     counts = (int*)malloc(comm_sz * sizeof(*counts)); assert(counts != NULL);
     displs = (int*)malloc(comm_sz * sizeof(*displs)); assert(displs != NULL);
     for (int i=0; i<comm_sz; i++) {
-        const int istart = n * i / comm_sz;
-        const int iend = n * (i+1) / comm_sz;
-        counts[i] = iend - istart;
-        displs[i] = istart;
+        const int start = n * i / comm_sz;
+        const int end = n * (i+1) / comm_sz;
+        counts[i] = end - start;
+        displs[i] = start;
     }
 
     const int local_n = counts[my_rank];
     local_particles = (particle_t*)malloc(local_n * sizeof(*local_particles)); 
     assert(local_particles != NULL);
 
+    /*
+        MPI type struct to send/receive data of type particles_t
+    */
     const int count = 4;
-    int displacements[] = {0, 2, 4, 6};
-    const int blocklenghts[] = {2, 2, 2, 2};
+    const int blocklengths[] = { 2, 2, 2, 2 };
+    const MPI_Datatype oldtypes[] = { MPI_FLOAT, MPI_FLOAT, MPI_FLOAT, MPI_FLOAT };
+    MPI_Aint offsets[4];
 
-    MPI_Type_indexed(
-        count, 
-        blocklenghts, 
-        displacements,
-        MPI_FLOAT,
+    offsets[0] = offsetof(particle_t, x);
+    offsets[1] = offsetof(particle_t, vx);
+    offsets[2] = offsetof(particle_t, fx);
+    offsets[3] = offsetof(particle_t, rho);
+
+    MPI_Type_create_struct(
+        count,
+        blocklengths,
+        offsets,
+        oldtypes,
         &mpi_particles
     );
 
@@ -396,16 +428,17 @@ int main(int argc, char **argv) {
         );
 
         update();
+
         /* the average  velocities MUST be computed at each step, even
            if it is not shown (to ensure constant workload per
            iteration) */
         const float local_avg = avg_velocities(local_particles);
         float avg = 0;
-
+        
         MPI_Reduce(
             &local_avg,
             &avg,
-            comm_sz,
+            1,
             MPI_FLOAT,
             MPI_SUM,
             0,
@@ -417,9 +450,9 @@ int main(int argc, char **argv) {
                 printf("step %5d, avgV=%f\n", s, avg);
         }
     }
-
     const float elapsed = hpc_gettime() - tstart;
     printf("Elapsed time %.2f\n", elapsed);
+
     free(particles);
     free(local_particles);
     free(counts);

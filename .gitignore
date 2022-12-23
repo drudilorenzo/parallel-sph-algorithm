@@ -51,8 +51,8 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+stats
 build
 .vscode
-results.txt
 
 

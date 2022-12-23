@@ -15,9 +15,14 @@
 #
 # - mpi: builds the MPI version
 #
+# - create-build-dir: create the build folder
+#
+# - stats: run stats scripts (see script folder)
+# 
 # - clean: clean up
 #
-# - create-build-dir: create the build folder
+# - clean-stats: clean up stats
+#
 #
 # Last modified on 2022-12-23 by Lorenzo Drudi
 
@@ -27,6 +32,8 @@ CFLAGS+=-std=c99 -Wall -Wpedantic
 LDLIBS=-lm
 BUILD_DIR=build
 SRC_DIR=src
+STATS_DIR=stats
+SCRIPT_DIR=script
 
 vpath %.c $(SRC_DIR)
 
@@ -39,6 +46,8 @@ gui: create-build-dir sph.gui
 omp: create-build-dir sph.omp
 
 mpi: create-build-dir sph.mpi
+
+stats: clean-stats all run-stats 
 
 sph.serial:: sph.c
 	$(CC) $(CFLAGS) $< $(LDLIBS) -o $(BUILD_DIR)/$@
@@ -55,10 +64,17 @@ sph.omp: omp-sph.c
 sph.mpi: mpi-sph.c
 	mpicc ${CFLAGS} $< ${LDLIBS} -o $(BUILD_DIR)/$@
 
-.PHONY: create-dir clean
+.PHONY: create-dir clean clean-stats run-stats
 
 create-build-dir: 
 	[ -d $(BUILD_DIR) ] || mkdir -p $(BUILD_DIR) 
 
+run-stats: 
+	./$(SCRIPT_DIR)/serial-stats.sh && ./$(SCRIPT_DIR)/omp-stats.sh && ./$(SCRIPT_DIR)/mpi-stats.sh
+
 clean:
 	\rm -f $(BUILD_DIR)/* *.o *~
+
+clean-stats:
+	\rm -f $(STATS_DIR)/*
+

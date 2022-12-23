@@ -51,9 +51,7 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-*.gui
-sph
-*-sph
+build
 .vscode
 results.txt
 

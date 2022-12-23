@@ -1,20 +1,28 @@
 # Makefile for the High Performance Computing programming project,
 # Academic Year 2022/2023.
 #
+# The source files are in the src folder and the executables in the build one.
+#
 # Available targets:
 #
-# - sph: builds the non-GUI version (default)
+# - all: builds all the versions
 #
-# - sph.gui: builds the GUI version
+# - sph: builds the non-GUI version
 #
-# - all: builds both the GUI and non-GUI versions
+# - gui: builds the GUI version
+#
+# - omp: builds the openMP version
+#
+# - mpi: builds the MPI version
 #
 # - clean: clean up
+#
+# - create-build-dir: create the build folder
 #
 # Last modified on 2022-12-23 by Lorenzo Drudi
 
 SHELL=/bin/bash
-EXE:=sph sph.gui sph.omp sph.mpi
+EXE:=sph.serial sph.gui sph.omp sph.mpi
 CFLAGS+=-std=c99 -Wall -Wpedantic
 LDLIBS=-lm
 BUILD_DIR=build
@@ -22,15 +30,15 @@ SRC_DIR=src
 
 vpath %.c $(SRC_DIR)
 
-all: create-dir $(EXE)
+all: create-build-dir $(EXE)
 
-sph: create-dir sph.serial;
+sph: create-build-dir sph.serial;
 
-gui: create-dir sph.gui
+gui: create-build-dir sph.gui
 
-omp: create-dir sph.omp
+omp: create-build-dir sph.omp
 
-mpi: create-dir sph.mpi
+mpi: create-build-dir sph.mpi
 
 sph.serial:: sph.c
 	$(CC) $(CFLAGS) $< $(LDLIBS) -o $(BUILD_DIR)/$@
@@ -49,7 +57,7 @@ sph.mpi: mpi-sph.c
 
 .PHONY: create-dir clean
 
-create-dir: 
+create-build-dir: 
 	[ -d $(BUILD_DIR) ] || mkdir -p $(BUILD_DIR) 
 
 clean:

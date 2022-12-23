@@ -10,12 +10,12 @@ Parallel version of Müller's "Particle-Based Fluid Simulation for Interactive A
 
 It offers:
 
-- [Serial implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/sph.c) 
-- [Serial implementation with gui](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/sph.c)
-- [OpenMP implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/omp-sph.c)
-- [MPI implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/mpi-sph.c)
+- [x] [Serial implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/sph.c) 
+- [x] [Serial implementation with gui](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/sph.c)
+- [x] [OpenMP implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/omp-sph.c)
+- [x] [MPI implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/mpi-sph.c)
 
-### Compile
+### How to Compile
 
 - ```make all```: compile all the versions 
 - ```make sph```: compile serial version 
@@ -23,7 +23,7 @@ It offers:
 - ```make omp```: compile omp version 
 - ```make mpi```: compile mpi version
 
-### Run
+### How to Run
 
 - *Serial*: ```./build/sph.serial ${INPUT_SIZE}``` (e.g. ```./build/sph.serial 500``` to run with 500 particles)
 - *GUI*: ```./build/sph.gui ${INPUT_SIZE}``` (e.g. ```./build/sph.gui 500``` to run with 500 particles)

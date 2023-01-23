@@ -27,13 +27,15 @@ It offers:
 
 ### How to Run
 
-**Max input size: 20000**.
+`Max input size`: 20000. \
+`Default params`: Particles: 500, Steps: 50.
 
-- *Serial*: ```./build/sph.serial ${INPUT_SIZE}``` (e.g. ```./build/sph.serial 500``` to run with 500 particles)
-- *GUI*: ```./build/sph.gui ${INPUT_SIZE}``` (e.g. ```./build/sph.gui 500``` to run with 500 particles)
-- *OpenMP*: ```OMP_NUM_THREADS=${NUM_THREADS} ./build/sph.omp ${INPUT_SIZE}``` \
+
+- *Serial*: ```./build/sph.serial ${INPUT_SIZE} ${STEPS}``` (e.g. ```./build/sph.serial 500``` to run with 500 particles)
+- *GUI*: ```./build/sph.gui ${INPUT_SIZE} ${STEPS}``` (e.g. ```./build/sph.gui 500``` to run with 500 particles)
+- *OpenMP*: ```OMP_NUM_THREADS=${NUM_THREADS} ./build/sph.omp ${INPUT_SIZE} ${STEPS}``` \
   (e.g. ```OMP_NUM_THREADS=4 ./build/sph.omp 500``` to run with 4 threads and 500 particles)
-- *MPI*: ```mpirun -n ${NUM_CORES} ./build/sph.mpi ${INPUT_SIZE}``` \
+- *MPI*: ```mpirun -n ${NUM_CORES} ./build/sph.mpi ${INPUT_SIZE} ${STEPS}``` \
   (e.g. ```mpirun -n 4 ./build/sph.mpi 500``` to run with 4 cores and 500 particles)
   
   

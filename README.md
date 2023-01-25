@@ -39,13 +39,13 @@ It offers:
 - ```make clean-stats```: clean up stats files
 
 Scripts:
-- [omp-stats](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script/omp-stats.sh);
-- [mpi-stats](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script/mpi-stats.sh). 
+- [omp-stats](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script/omp-stats.sh)
+- [mpi-stats](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script/mpi-stats.sh) 
 
 Each script executes the program several times increasing the number of threads/cores from 1 to the number available on your machine.
 Each execution is repeated 5 times.
 The cycle is done two times:
 1. The input size remains constant and the number of threads/cores increases. Execution
-   times are useful to get speedup and strong scaling efficiency.
-2. The amount of work done by each thread/core remain constant. The execution times are u  seful to get weak scaling efficiency.
+   times are useful to get speedup and strong scaling efficiency;
+2. The amount of work done by each thread/core remain constant. The execution times are useful to get weak scaling efficiency.
 

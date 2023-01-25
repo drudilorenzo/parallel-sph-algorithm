@@ -34,10 +34,14 @@
     mpicc -std=c99 -Wall -Wpedantic mpi-sph.c -o mpi-sph -lm
 
     Run with:
+    mpirun -n ${N_THREADS} ./mpi-sph ${N_PARTICLES} ${N_STEPS}
+    Default params: Particles: 500, Steps: 50
+
     mpirun -n 4 ./mpi-sph
 */
 
-/* It must be the programme's first include. */
+/* It must be the programme's first include.
+   It's used to take the wall-clock time. */
 #include "hpc.h"
 
 #include <stdio.h>
@@ -65,7 +69,6 @@ const float DT = 0.0007;        // integration timestep
 const float BOUND_DAMPING = -0.5;
 
 const int MAX_PARTICLES = 20000;
-
 // Larger window size to accommodate more particles
 #define WINDOW_WIDTH 3000
 #define WINDOW_HEIGHT 2000
@@ -91,30 +94,27 @@ typedef struct {
 /* Main particles array.
 
    It's managed by the master process (rank == 0).
-   Each process send the updated cells to thius array.
-*/
-particle_t *particles; // Main particles array
+   Each process send its local updated cells to this array. */
+particle_t *particles; 
 
-/* Process's particles array.
+/* Local particles array.
 
-   Each process do the computation on its own part of the data and then
-   send the updated particles to the main array.
-*/
+   Each process do the computation on its domain partition and then
+   send the local updated particles to the main array. */
 particle_t *local_particles; 
-int n_particles = 0;    // number of currently active particles
 
-MPI_Datatype mpi_particles; // MPI data type to send/receive data of type  particle_t
+int n_particles = 0;    // number of currently active particles
+MPI_Datatype mpi_particles; // MPI data type to send/receive data of type particle_t
 
 /* Counts array.
 
-   Entry i specifies the number of particles computed by process i.
-*/
+   Entry i specifies the number of particles computed by process i. */
 int *counts;
 
-/* Displacemenets array.
+/* Displacements array.
 
    Entry i specifies the displacement of process i data from the starting 
-   of the array.  */
+   of the array. */
 int *displs; 
 
 int my_rank; // Rank of the process
@@ -122,7 +122,8 @@ int my_rank; // Rank of the process
 /**
  * Return a random value in [a, b]
  */
-float randab(float a, float b) {
+float randab(float a, float b)
+{
     return a + (b-a)*rand() / (float)(RAND_MAX);
 }
 
@@ -130,7 +131,8 @@ float randab(float a, float b) {
  * Set initial position of particle `*p` to (x, y); initialize all
  * other attributes to default values (zeros).
  */
-void init_particle(particle_t *p, float x, float y) {
+void init_particle(particle_t *p, float x, float y)
+{
     p->x = x;
     p->y = y;
     p->vx = p->vy = 0.0;
@@ -140,9 +142,10 @@ void init_particle(particle_t *p, float x, float y) {
 }
 
 /**
- * Return nonzero iff (x, y) is within the frame
+ * Return nonzero if (x, y) is within the frame
  */
-int is_in_domain(float x, float y) {
+int is_in_domain(float x, float y)
+{
     return ((x < VIEW_WIDTH - EPS) &&
             (x > EPS) &&
             (y < VIEW_HEIGHT - EPS) &&
@@ -157,7 +160,8 @@ int is_in_domain(float x, float y) {
  * DO NOT parallelize this function, since it calls rand() which is
  * not thread-safe.
  */
-void init_sph(int n) {
+void init_sph(int n)
+{
     n_particles = 0;
     printf("Initializing with %d particles\n", n);
 
@@ -175,18 +179,21 @@ void init_sph(int n) {
     assert(n_particles == n);
 }
 
-void compute_density_pressure(void) {
+void compute_density_pressure(void)
+{
     const float HSQ = H * H;    // radius^2 for optimization
 
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
-       et al. */
+       et al. 
+       
+       It modifies only its local particles.*/
     const float POLY6 = 4.0 / (M_PI * pow(H, 8));
     const int local_n = counts[my_rank];
-    for (int i=0; i<local_n; i++) {
+    for (int i = 0; i < local_n; i++) {
         particle_t *pi = &local_particles[i];
         pi->rho = 0.0;
-        for (int j=0; j<n_particles; j++) {
+        for (int j = 0; j < n_particles; j++) {
             const particle_t *pj = &particles[j];
 
             const float dx = pj->x - pi->x;
@@ -201,21 +208,24 @@ void compute_density_pressure(void) {
     }
 }
 
-void compute_forces(void) {
+void compute_forces(void)
+{
     /* Smoothing kernels defined in Muller and their gradients adapted
        to 2D per "SPH Based Shallow Water Simulation" by Solenthaler
-       et al. */
+       et al. 
+       
+       Each process modifies only the particles of its partition.*/
     const float SPIKY_GRAD = -10.0 / (M_PI * pow(H, 5));
     const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
     const float EPS = 1e-6;
     const int local_n = counts[my_rank];
 
-    for (int i=0; i<local_n; i++) {
+    for (int i = 0; i < local_n; i++) {
         particle_t *pi = &local_particles[i];
         float fpress_x = 0.0, fpress_y = 0.0;
         float fvisc_x = 0.0, fvisc_y = 0.0;
 
-        for (int j=0; j<n_particles; j++) {
+        for (int j = 0; j < n_particles; j++) {
             const particle_t *pj = &particles[j];
 
             if (pi == pj)
@@ -243,9 +253,11 @@ void compute_forces(void) {
     }
 }
 
-void integrate(void) {
+void integrate(void)
+{
+    /* Each process modifies only the particles of its partition. */
     const int local_n = counts[my_rank];
-    for (int i=0; i<local_n; i++) {
+    for (int i = 0; i < local_n; i++) {
         particle_t *p = &local_particles[i];
         // forward Euler integration
         p->vx += DT * p->fx / p->rho;
@@ -273,20 +285,26 @@ void integrate(void) {
     }
 }
 
-float avg_velocities() {
+float avg_velocities( void )
+{
     double local_result = 0.0;
     const int local_n = counts[my_rank];
 
-    for (int i=0; i<local_n; i++) {
+    for (int i = 0; i < local_n; i++) {
+        /* the hypot(x,y) function is equivalent to sqrt(x*x + y*y); */
         local_result += hypot(local_particles[i].vx, local_particles[i].vy) / n_particles;
     }
 
     return local_result;
 }
 
-void update(void) {
+void update( void )
+{
     compute_density_pressure();
 
+    /* After the `compute_density_pressure` function we have to gather 
+       the updated values and then distribute them to all the processes
+       since are needed by the next step. */
     MPI_Allgatherv(
         local_particles,
         counts[my_rank],
@@ -299,20 +317,9 @@ void update(void) {
     );
 
     compute_forces();
-
-    MPI_Allgatherv(
-        local_particles,
-        counts[my_rank],
-        mpi_particles,
-        particles,
-        counts,
-        displs,
-        mpi_particles,
-        MPI_COMM_WORLD
-    );
-
     integrate();
 
+    /* As we've done before we gather and distribute all the updated particles. */
     MPI_Allgatherv(
         local_particles,
         counts[my_rank],
@@ -325,7 +332,8 @@ void update(void) {
     );
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     int n = DAM_PARTICLES;
     int nsteps = 50;
     int comm_sz;
@@ -360,42 +368,29 @@ int main(int argc, char **argv) {
         init_sph(n);
     }
 
+    /* Compute the counts and displacements array.
+       They're used to partition domains of arbitrary size. */
     counts = (int*)malloc(comm_sz * sizeof(*counts)); assert(counts != NULL);
     displs = (int*)malloc(comm_sz * sizeof(*displs)); assert(displs != NULL);
-    for (int i=0; i<comm_sz; i++) {
+    for (int i = 0; i < comm_sz; i++) {
         const int start = n * i / comm_sz;
         const int end = n * (i+1) / comm_sz;
         counts[i] = end - start;
         displs[i] = start;
     }
 
+    /* Local array used to store the local particles of each process. */
     const int local_n = counts[my_rank];
     local_particles = (particle_t*)malloc(local_n * sizeof(*local_particles)); 
     assert(local_particles != NULL);
 
-    /*
-        MPI type struct to send/receive data of type particles_t
-    */
-    const int count = 4;
-    const int blocklengths[] = { 2, 2, 2, 2 };
-    const MPI_Datatype oldtypes[] = { MPI_FLOAT, MPI_FLOAT, MPI_FLOAT, MPI_FLOAT };
-    MPI_Aint offsets[4];
-
-    offsets[0] = offsetof(particle_t, x);
-    offsets[1] = offsetof(particle_t, vx);
-    offsets[2] = offsetof(particle_t, fx);
-    offsets[3] = offsetof(particle_t, rho);
-
-    MPI_Type_create_struct(
-        count,
-        blocklengths,
-        offsets,
-        oldtypes,
-        &mpi_particles
-    );
-
+    /* MPI type struct to send/receive data of type particles_t.
+       MPI already permits to send/receive contiguous elements without 
+       a custom data type. Despite that I prefered to use it. */
+    MPI_Type_contiguous(8, MPI_FLOAT, &mpi_particles);
     MPI_Type_commit(&mpi_particles);
 
+    /* Broadcast the particles array to each processor. */
     MPI_Bcast(
         particles,
         n,
@@ -404,6 +399,8 @@ int main(int argc, char **argv) {
         MPI_COMM_WORLD
     ); 
 
+    /* Since particles is a dynamic array, it's not possible to get its size.
+       So we need to broadcast also its length. */
     MPI_Bcast(
         &n_particles,
         1,
@@ -412,42 +409,34 @@ int main(int argc, char **argv) {
         MPI_COMM_WORLD
     );
 
+    /* Since we've already sent all the particles array, is not needed a scatterv
+       to partition the domain into the local arrays.
+       We can do that just with a for cycle using the process' displacement. */
+    for (int i = 0; i < local_n; i++) {
+        const int global_index = displs[my_rank] + i; 
+        local_particles[i] = particles[global_index];
+    }
+
     const float tstart = hpc_gettime();
     for (int s=0; s<nsteps; s++) {
-    
-        MPI_Scatterv(
-            particles,
-            counts,
-            displs,
-            mpi_particles,
-            local_particles,
-            counts[my_rank],
-            mpi_particles,
-            0,
-            MPI_COMM_WORLD
-        );
-
         update();
 
         /* the average  velocities MUST be computed at each step, even
            if it is not shown (to ensure constant workload per
            iteration) */
-        const float local_avg = avg_velocities(local_particles);
+        const float local_avg = avg_velocities();
         float avg = 0;
-        
-        MPI_Reduce(
+        MPI_Allreduce(
             &local_avg,
             &avg,
             1,
             MPI_FLOAT,
             MPI_SUM,
-            0,
             MPI_COMM_WORLD
         );
 
-        if (my_rank == 0) {
-            if (s % 10 == 0)
-                printf("step %5d, avgV=%f\n", s, avg);
+        if (my_rank == 0 && s % 10 == 0) {
+            printf("step %5d, avgV=%f\n", s, avg);
         }
     }
     const float elapsed = hpc_gettime() - tstart;

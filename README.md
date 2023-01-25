@@ -35,7 +35,7 @@ It offers:
   
 ### Stats
   
-- ```make stats```: run all the stats scripts (see [script](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script) folder)
+- ```make stats```: builds all and run the stats scripts (see [script](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script) folder)
 - ```make clean-stats```: clean up stats files
 
 Scripts:

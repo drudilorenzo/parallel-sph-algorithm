@@ -30,10 +30,7 @@ STATS_DIR="stats"
 STATS_FILE="omp-stats.txt"
 
 function print_header() {
-    echo -en "th\ts\t"
-    if $1; then
-        echo -en "\t"
-    fi
+    echo -en "th\ts\t\t"
     for rep in `seq ${REPS}`; do
         echo -en "t${rep}\t\t"
     done
@@ -69,13 +66,13 @@ fi
     echo ""
     echo "STRONG SCALING"
     WEAK_SCALING=false
-    print_header ${WEAK_SCALING}
+    print_header
     exec_program ${DEFAULT_SIZE} ${WEAK_SCALING}
 
     echo ""
     echo "WEAK SCALING"
-    DEFAULT_SIZE=2000
+    DEFAULT_SIZE=5000
     WEAK_SCALING=true
-    print_header ${WEAK_SCALING}
+    print_header
     exec_program ${DEFAULT_SIZE} ${WEAK_SCALING}
 } > ../${STATS_DIR}/${STATS_FILE}

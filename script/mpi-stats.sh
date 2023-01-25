@@ -30,10 +30,7 @@ STATS_DIR="stats"
 STATS_FILE="mpi-stats.txt"
 
 function print_header() {
-    echo -en "th\ts\t"
-    if $1; then
-        echo -en "\t"
-    fi
+    echo -en "c\ts\t\t"
     for rep in `seq ${REPS}`; do
         echo -en "t${rep}\t\t"
     done
@@ -43,7 +40,7 @@ function print_header() {
 function exec_program() {
     SIZE=$1
     for c in `seq ${CORES}`; do
-        echo -en "${th}\t"
+        echo -en "${c}\t"
         if $2; then
             SIZE=`echo "scale=2; $1 * e(l($c)/2)" | bc -l -q`
         fi
@@ -69,13 +66,13 @@ fi
     echo ""
     echo "STRONG SCALING"
     WEAK_SCALING=false
-    print_header ${WEAK_SCALING}
+    print_header
     exec_program ${DEFAULT_SIZE} ${WEAK_SCALING}
 
     echo ""
     echo "WEAK SCALING"
-    DEFAULT_SIZE=2000
+    DEFAULT_SIZE=5000
     WEAK_SCALING=true
-    print_header ${WEAK_SCALING}
+    print_header
     exec_program ${DEFAULT_SIZE} ${WEAK_SCALING}
 } > ../${STATS_DIR}/${STATS_FILE}

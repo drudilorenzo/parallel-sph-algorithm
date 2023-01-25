@@ -10,8 +10,6 @@ Parallel version of Müller's "Particle-Based Fluid Simulation for Interactive A
 
 It offers:
 
-- [x] [Serial implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/sph.c) 
-- [x] [Serial implementation with gui](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/sph.c)
 - [x] [OpenMP implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/omp-sph.c)
 - [x] [MPI implementation](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/src/mpi-sph.c)
 
@@ -20,25 +18,34 @@ It offers:
 **Run all the commands in the main directory**.
 
 - ```make all```: compile all the versions 
-- ```make sph```: compile serial version 
-- ```make gui```: compile gui version
 - ```make omp```: compile omp version 
 - ```make mpi```: compile mpi version
+- ```make clean ```: clean up (NOT stats files)
 
 ### How to Run
 
 `Max input size`: 20000. \
 `Default params`: Particles: 500, Steps: 50.
 
+- *OpenMP*: ```OMP_NUM_THREADS=${NUM_THREADS} omp-sph ${NUM_PARTICLES} ${NUM_STEPS}``` \
+  (e.g. ```OMP_NUM_THREADS=4 omp-sph 500``` to run with 4 threads and 500 particles)
+- *MPI*: ```mpirun -n ${NUM_CORES} mpi-sph ${NUM_PARTICLES} ${NUM_STEPS}``` \
+  (e.g. ```mpirun -n 4 mpi-sph 500``` to run with 4 cores and 500 particles)
+  
+  
+### Stats
+  
+- ```make stats```: run all the stats scripts (see [script](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script) folder)
+- ```make clean-stats```: clean up stats files
 
-- *Serial*: ```./build/sph.serial ${INPUT_SIZE} ${STEPS}``` (e.g. ```./build/sph.serial 500``` to run with 500 particles)
-- *GUI*: ```./build/sph.gui ${INPUT_SIZE} ${STEPS}``` (e.g. ```./build/sph.gui 500``` to run with 500 particles)
-- *OpenMP*: ```OMP_NUM_THREADS=${NUM_THREADS} ./build/sph.omp ${INPUT_SIZE} ${STEPS}``` \
-  (e.g. ```OMP_NUM_THREADS=4 ./build/sph.omp 500``` to run with 4 threads and 500 particles)
-- *MPI*: ```mpirun -n ${NUM_CORES} ./build/sph.mpi ${INPUT_SIZE} ${STEPS}``` \
-  (e.g. ```mpirun -n 4 ./build/sph.mpi 500``` to run with 4 cores and 500 particles)
-  
-  
- 
-  
-  
+Scripts:
+- [omp-stats](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script/omp-stats.sh);
+- [mpi-stats](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script/mpi-stats.sh). 
+
+Each script executes the program several times increasing the number of threads/cores from 1 to the number available on your machine.
+Each execution is repeated 5 times.
+The cycle is done two times:
+1. The input size remains constant and the number of threads/cores increases. Execution
+   times are useful to get speedup and strong scaling efficiency.
+2. The amount of work done by each thread/core remain constant. The execution times are u  seful to get weak scaling efficiency.
+

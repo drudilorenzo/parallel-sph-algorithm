@@ -10,7 +10,7 @@
 #
 # - mpi: builds the MPI version
 #
-# - stats: run stats scripts (see script folder)
+# - stats: builds all and run stats scripts (see script folder)
 # 
 # - clean: clean up
 #
@@ -26,13 +26,14 @@ LDLIBS=-lm
 STATS_DIR=../stats
 SCRIPT_DIR=../script
 
+
 all: $(EXE)
 
 omp: omp-sph
 
 mpi: mpi-sph
 
-stats: run-stats 
+stats: all run-stats 
 
 omp-sph: CFLAGS+=-fopenmp
 omp-sph: omp-sph.c

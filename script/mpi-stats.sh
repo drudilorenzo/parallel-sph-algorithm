@@ -21,7 +21,11 @@
 # 
 
 # Cores NOT threads
-CORES=$( grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}' )
+if (( `lscpu | grep Thread | awk '{print $NF}'` == 1  )); then
+    CORES=$( grep -c ^processor /proc/cpuinfo )
+else
+    CORES=$( grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}' )
+fi
 PROG="../src/mpi-sph"
 DEFAULT_SIZE=5000
 STEPS=50

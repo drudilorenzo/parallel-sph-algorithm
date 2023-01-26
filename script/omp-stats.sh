@@ -21,7 +21,7 @@
 # 
 
 # Threads NOT cores
-THREADS=$(grep -c ^processor /proc/cpuinfo)
+THREADS=$( grep -c ^processor /proc/cpuinfo )
 PROG="../src/omp-sph"
 DEFAULT_SIZE=5000
 STEPS=50

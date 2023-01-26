@@ -51,9 +51,15 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-stats
+# Executables and stats folder
 src/omp-sph
-src/mpi-sph 
+src/mpi-sph
+src/sph
+src/sph.gui
+src/
+stats
+
+# Vscode config
 .vscode
 
 

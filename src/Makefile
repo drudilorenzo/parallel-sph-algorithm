@@ -4,7 +4,11 @@
 #
 # Available targets:
 #
-# - all: builds all the versions
+# - all: builds all the versions (default)
+#
+# - sph: builds the non-GUI serial version
+#
+# - gui: builds the GUI serial version
 #
 # - omp: builds the OpenMP version
 #
@@ -17,10 +21,10 @@
 # - clean-stats: clean up stats
 #
 #
-# Last modified on 2023-01-24 by Lorenzo Drudi
+# Last modified on 2023-01-26 by Lorenzo Drudi
 
 SHELL=/bin/bash
-EXE:=omp-sph mpi-sph
+EXE:=omp-sph mpi-sph sph sph.gui
 CFLAGS+=-std=c99 -Wall -Wpedantic
 LDLIBS=-lm
 STATS_DIR=../stats
@@ -29,11 +33,23 @@ SCRIPT_DIR=../script
 
 all: $(EXE)
 
+serial: sph
+
+gui: sph.gui
+
 omp: omp-sph
 
 mpi: mpi-sph
 
 stats: all run-stats 
+
+sph: sph.c
+	$(CC) $(CFLAGS) $< $(LDLIBS) -o $@
+
+sph.gui: CFLAGS+=-DGUI
+sph.gui: LDLIBS+=-lglut -lGL -lX11
+sph.gui: sph.c
+	$(CC) $(CFLAGS) $< $(LDLIBS) -o $@
 
 omp-sph: CFLAGS+=-fopenmp
 omp-sph: omp-sph.c

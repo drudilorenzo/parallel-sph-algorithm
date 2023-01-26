@@ -31,8 +31,10 @@ It offers:
 `Max input size`: 20000. \
 `Default params`: Particles: 500, Steps: 50.
 
-- *Serial*: ```sph ${INPUT_SIZE} ${NUM_STEPS}``` (e.g. ```sph 500``` to run with 500 particles and 50 steps) \
-- *GUI*: ```sph.gui ${INPUT_SIZE}``` (e.g. ```sph.gui 500``` to run with 500 particles) \
+- *Serial*: ```sph ${INPUT_SIZE} ${NUM_STEPS}``` \
+  (e.g. ```sph 500``` to run with 500 particles and 50 steps)
+- *GUI*: ```sph.gui ${INPUT_SIZE}``` \
+  (e.g. ```sph.gui 500``` to run with 500 particles)
 - *OpenMP*: ```OMP_NUM_THREADS=${NUM_THREADS} omp-sph ${NUM_PARTICLES} ${NUM_STEPS}``` \
   (e.g. ```OMP_NUM_THREADS=4 omp-sph 500``` to run with 4 threads, 500 particles and 50 steps)
 - *MPI*: ```mpirun -n ${NUM_CORES} mpi-sph ${NUM_PARTICLES} ${NUM_STEPS}``` \

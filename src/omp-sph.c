@@ -172,8 +172,7 @@ void compute_density_pressure(void)
 
 /* Create the pool of threads only once and then recycle it.
    It's possible that at each `omp parallel for` the pool is created and then destroyed.
-   Since it depends from the OpenMP implementation (which is compiler dependent)
-   we ensure that it's created only once. */
+   Since it depends from the OpenMP implementation we ensure that it's created only once. */
 #if __GNUC__ < 9
 #pragma omp parallel default(none) shared(n_particles, particles, rho)
 #else

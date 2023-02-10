@@ -24,7 +24,7 @@ It offers:
 - ```make serial```: builds the GUI serial version
 - ```make omp```: builds the omp version 
 - ```make mpi```: builds the mpi version
-- ```make clean ```: clean up executables (NOT stats files)
+- ```make clean```: clean up executables (NOT stats files)
 
 ### How to Run
 

@@ -16,12 +16,12 @@
 #
 # - stats: builds all and run stats scripts (see script folder)
 # 
-# - clean: clean up
+# - clean: clean up (not stats files)
 #
-# - clean-stats: clean up stats
+# - clean-stats: clean up stats (not executables)
 #
 #
-# Last modified on 2023-01-26 by Lorenzo Drudi
+# Last modified on 2023-01-26 by Drudi Lorenzo - 0000969871
 
 SHELL=/bin/bash
 EXE:=omp-sph mpi-sph sph sph.gui

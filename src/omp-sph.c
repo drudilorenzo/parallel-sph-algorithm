@@ -31,6 +31,8 @@
  ****************************************************************************/
 
 /*
+    Student: Drudi Lorenzo - 0000969871
+
     Compile with:
     gcc -std=c99 -Wall -Wpedantic -fopenmp omp-sph.c -o omp-sph -lm
 
@@ -101,7 +103,7 @@ float randab(float a, float b)
 }
 
 /**
- * Set initial position of par ticle `*p` to (x, y); initialize all
+ * Set initial position of particle `*p` to (x, y); initialize all
  * other attributes to default values (zeros).
  */
 void init_particle(particle_t *p, float x, float y)

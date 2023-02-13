@@ -8,16 +8,17 @@
 # The cycle is repeated two times:
 
 # 1. The input size remains constant and the number of cores increases. Execution
-# times are useful to get speedup and strong scaling efficiency.
+# times are useful to compute speedup and strong scaling efficiency.
 
-# 2. The amount of work done by each core remain constant. The execution times are useful 
-# to get weak scaling efficiency.
+# 2. The amount of work done by each core remain constant. Execution times are useful 
+# to compute weak scaling efficiency.
 
 # Output example: 
 # CORES SIZE T1 T2 T3 T4 T5
 #
-# It's possible to change input size and steps to get execution times
-# appropriate to the machine used.
+# Change input size and steps to get execution times appropriate to the machine used.
+#
+# Drudi Lorenzo - 0000969871
 # 
 
 # Cores NOT threads
@@ -75,6 +76,7 @@ fi
 
     echo ""
     echo "WEAK SCALING"
+    # Max dim must not exceed 20000. Adapt it on your machine specs
     DEFAULT_SIZE=5000
     WEAK_SCALING=true
     print_header

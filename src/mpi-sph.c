@@ -31,6 +31,8 @@
  ****************************************************************************/
 
 /*
+    Student: Drudi Lorenzo - 0000969871
+
     Compile with:
     mpicc -std=c99 -Wall -Wpedantic mpi-sph.c -o mpi-sph -lm
 
@@ -380,7 +382,7 @@ int main(int argc, char **argv)
         displs[i] = start;
     }
 
-    /* Local array used to store the local particles of each process. */
+    /* Local array used to store the partition of each process. */
     const int local_n = counts[my_rank];
     local_particles = (particle_t*)malloc(local_n * sizeof(*local_particles)); 
     assert(local_particles != NULL);

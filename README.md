@@ -17,7 +17,7 @@ It offers:
 
 ### How to Compile
 
-**Run all the commands in the src folder**.
+**Run all the commands in the src directory**.
 
 - ```make all```: builds all the versions (default)
 - ```make serial```: builds the non-GUI serial version
@@ -43,9 +43,9 @@ It offers:
   
 ### Stats
 
-**Stats files are added into the stats folder**
+**Stats files are added into the stats directory**
   
-- ```make stats```: builds all and run the stats scripts (see [scripts](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script) folder)
+- ```make stats```: builds all and run the stats scripts (see [scripts](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/script) directory)
 - ```make clean-stats```: clean up stats files
 
 Scripts:
@@ -56,7 +56,10 @@ Each script executes the program several times increasing the number of threads/
 Each execution is repeated 5 times.
 The cycle is done two times:
 1. The input size remains constant and the number of threads/cores increases. Execution
-   times are useful to get speedup and strong scaling efficiency;
-2. The amount of work done by each thread/core remain constant. The execution times are useful 
-   to get weak scaling efficiency.
-
+   times are useful to compute speedup and strong scaling efficiency;
+2. The amount of work done by each thread/core remain constant. Execution times are useful 
+   to compute weak scaling efficiency.
+   
+The [docs](https://github.com/LorenzoDrudi/parallel-sph-algorithm/blob/master/docs) directory contains the benchmarks of the two parallel versions using the following hardware:
+- Intel(R) Xeon(R) CPU E5-2603 v4 @ 1.70GHz (no Hyper-Threading);
+- RAM 64Gb.

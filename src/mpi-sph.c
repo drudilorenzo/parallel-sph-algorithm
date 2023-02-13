@@ -93,18 +93,7 @@ typedef struct {
     float rho, p;       // density, pressure
 } particle_t;
 
-
-/* Main particles array.
-
-   It's managed by the master process (rank == 0).
-   Each process send its local updated cells to this array. */
-particle_t *particles; 
-
-/* Local particles array.
-
-   Each process do the computation on its domain partition and then
-   send the local updated particles to the main array. */
-particle_t *local_particles; 
+particle_t *particles; // Particles array.
 
 int n_particles = 0;    // number of currently active particles
 MPI_Datatype mpi_particles; // MPI data type to send/receive data of type particle_t
@@ -193,8 +182,10 @@ void compute_density_pressure(void)
        It modifies only its local particles.*/
     const float POLY6 = 4.0 / (M_PI * pow(H, 8));
     const int local_n = counts[my_rank];
-    for (int i = 0; i < local_n; i++) {
-        particle_t *pi = &local_particles[i];
+    const int start = displs[my_rank];
+
+    for (int i = start; i < start + local_n; i++) {
+        particle_t *pi = &particles[i];
         pi->rho = 0.0;
         for (int j = 0; j < n_particles; j++) {
             const particle_t *pj = &particles[j];
@@ -222,9 +213,10 @@ void compute_forces(void)
     const float VISC_LAP = 40.0 / (M_PI * pow(H, 5));
     const float EPS = 1e-6;
     const int local_n = counts[my_rank];
+    const int start = displs[my_rank];
 
-    for (int i = 0; i < local_n; i++) {
-        particle_t *pi = &local_particles[i];
+    for (int i = start; i < start + local_n; i++) {
+        particle_t *pi = &particles[i];
         float fpress_x = 0.0, fpress_y = 0.0;
         float fvisc_x = 0.0, fvisc_y = 0.0;
 
@@ -260,8 +252,10 @@ void integrate(void)
 {
     /* Each process modifies only the particles of its partition. */
     const int local_n = counts[my_rank];
-    for (int i = 0; i < local_n; i++) {
-        particle_t *p = &local_particles[i];
+    const int start = displs[my_rank];
+
+    for (int i = start; i < start + local_n; i++) {
+        particle_t *p = &particles[i];
         // forward Euler integration
         p->vx += DT * p->fx / p->rho;
         p->vy += DT * p->fy / p->rho;
@@ -292,10 +286,11 @@ float avg_velocities( void )
 {
     double local_result = 0.0;
     const int local_n = counts[my_rank];
+    const int start = displs[my_rank];
 
-    for (int i = 0; i < local_n; i++) {
+    for (int i = start; i < start + local_n; i++) {
         /* the hypot(x,y) function is equivalent to sqrt(x*x + y*y); */
-        local_result += hypot(local_particles[i].vx, local_particles[i].vy) / n_particles;
+        local_result += hypot(particles[i].vx, particles[i].vy) / n_particles;
     }
 
     return local_result;
@@ -309,7 +304,7 @@ void update( void )
        the updated values and then distribute them to all the processes
        since are needed by the next step. */
     MPI_Allgatherv(
-        local_particles,
+        &particles[displs[my_rank]],
         counts[my_rank],
         mpi_particles,
         particles,
@@ -324,7 +319,7 @@ void update( void )
 
     /* As we've done before we gather and distribute all the updated particles. */
     MPI_Allgatherv(
-        local_particles,
+        &particles[displs[my_rank]],
         counts[my_rank],
         mpi_particles,
         particles,
@@ -382,11 +377,6 @@ int main(int argc, char **argv)
         displs[i] = start;
     }
 
-    /* Local array used to store the partition of each process. */
-    const int local_n = counts[my_rank];
-    local_particles = (particle_t*)malloc(local_n * sizeof(*local_particles)); 
-    assert(local_particles != NULL);
-
     /* MPI type struct to send/receive data of type particles_t.
        MPI already permits to send/receive contiguous elements without 
        a custom data type. Despite that I prefered to use it. */
@@ -411,14 +401,6 @@ int main(int argc, char **argv)
         0,
         MPI_COMM_WORLD
     );
-
-    /* Since we've already sent all the particles array, is not needed a scatterv
-       to partition the domain into the local arrays.
-       We can do that just with a for cycle using the process' displacement. */
-    for (int i = 0; i < local_n; i++) {
-        const int global_index = displs[my_rank] + i; 
-        local_particles[i] = particles[global_index];
-    }
 
     const float tstart = hpc_gettime();
     for (int s=0; s<nsteps; s++) {
@@ -448,7 +430,6 @@ int main(int argc, char **argv)
     }
 
     free(particles);
-    free(local_particles);
     free(counts);
     free(displs);
 
